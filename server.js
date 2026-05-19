@@ -20,6 +20,7 @@ async function newBrowser() {
   });
 }
 
+// ── BUSCAR en Wallapop ──
 app.get('/search', async (req, res) => {
   const { q = '', minPrice = '', maxPrice = '', condition = '', order = 'newest', limit = 24 } = req.query;
   if (!q.trim()) return res.status(400).json({ error: 'Parametro q requerido' });
@@ -100,6 +101,7 @@ app.get('/search', async (req, res) => {
   }
 });
 
+// ── DETALLE de un item ──
 app.get('/item/:id', async (req, res) => {
   const { id } = req.params;
   const cacheKey = `item_${id}`;
@@ -134,6 +136,46 @@ app.get('/item/:id', async (req, res) => {
   }
 });
 
+// ── IA DE REPARACIÓN (proxy hacia Claude) ──
+app.post('/ai', async (req, res) => {
+  const { messages, system } = req.body;
+  if (!messages || !messages.length) return res.status(400).json({ error: 'messages requerido' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada en Railway' });
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: system || 'Eres un experto en reparación de electrónica. Responde en español.',
+        messages
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(response.status).json({ error: err });
+    }
+
+    const data = await response.json();
+    const text = data.content?.map(b => b.text || '').join('\n') || '';
+    res.json({ reply: text });
+
+  } catch (err) {
+    console.error('AI error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Health check
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'wallapop-scraper' }));
 
 const PORT = process.env.PORT || 3000;
