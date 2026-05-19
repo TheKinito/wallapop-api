@@ -128,7 +128,9 @@ app.get('/search', async (req, res) => {
         if (!title || title.length < 3) return;
         const priceEl = container.querySelector('[class*="price"],[class*="Price"]');
         const priceText = priceEl?.textContent?.trim() || '';
-        const price = parseFloat(priceText.replace(/[^0-9,.]/g, '').replace(',', '.')) || 0;
+        // Parsear precio correctamente: "54,95 €" o "54.95€" o "54 €"
+        const priceClean = priceText.replace(/\./g,'').replace(',','.').replace(/[^0-9.]/g,'');
+        const price = parseFloat(priceClean) || 0;
         const imgEl = container.querySelector('img');
         const imageUrl = imgEl?.src || imgEl?.getAttribute('data-src') || '';
         const locEl = container.querySelector('[class*="location"],[class*="Location"],[class*="city"]');
