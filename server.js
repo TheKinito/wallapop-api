@@ -43,7 +43,7 @@ app.get('/search', async (req, res) => {
     const page = await context.newPage();
     await page.route('**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,otf}', r => r.abort());
 
-    // Mapeo de valores de estado al formato real de Wallapop
+    // Mapeo de estado al formato real de Wallapop
     const conditionMap = {
       'nuevo': 'new',
       'como_nuevo': 'as_good_as_new',
@@ -51,11 +51,17 @@ app.get('/search', async (req, res) => {
       'aceptable': 'fair'
     };
 
-    const params = new URLSearchParams({ keywords: q, order_by: order });
+    const params = new URLSearchParams({
+      keywords: q,
+      order_by: order,
+      country_code: 'ES',
+      language: 'es_ES'
+    });
     if (minPrice) params.append('min_sale_price', minPrice);
     if (maxPrice) params.append('max_sale_price', maxPrice);
-    if (condition && conditionMap[condition]) params.append('filters_source', 'quick_filters');
-    if (condition && conditionMap[condition]) params.append('condition', conditionMap[condition]);
+    if (condition && conditionMap[condition]) {
+      params.append('condition', conditionMap[condition]);
+    }
 
     const url = `https://es.wallapop.com/app/search?${params}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -98,10 +104,21 @@ app.get('/search', async (req, res) => {
         const description = descEl?.textContent?.trim() || '';
         results.push({ id, title, price, priceText, imageUrl, location, description, url: href });
       });
+
+      // Filtrar resultados irrelevantes: el título debe contener al menos una palabra clave
+      const keywords = maxItems > 0 ? [] : []; // placeholder, filtering done in Node
       return results;
     }, parseInt(limit));
 
-    const result = { query: q, total: items.length, items, wallapopUrl: url, scrapedAt: new Date().toISOString() };
+    // Filtrado de relevancia en Node: al menos 1 palabra de la búsqueda debe estar en el título
+    const queryWords = q.toLowerCase().split(' ').filter(w => w.length > 2);
+    const filteredItems = items.filter(item => {
+      if (!queryWords.length) return true;
+      const titleLower = item.title.toLowerCase();
+      return queryWords.some(word => titleLower.includes(word));
+    });
+
+    const result = { query: q, total: filteredItems.length, items: filteredItems, wallapopUrl: url, scrapedAt: new Date().toISOString() };
     cache.set(cacheKey, { data: result, ts: Date.now() });
     res.json(result);
 
