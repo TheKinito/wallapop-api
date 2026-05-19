@@ -25,7 +25,7 @@ async function newBrowser() {
 
 // ── BUSCAR en Wallapop ──
 app.get('/search', async (req, res) => {
-  const { q = '', minPrice = '', maxPrice = '', condition = '', order = 'newest', limit = 24 } = req.query;
+  const { q = '', minPrice = '', maxPrice = '', condition = '', order = 'newest', limit = 24, category = '' } = req.query;
   if (!q.trim()) return res.status(400).json({ error: 'Parametro q requerido' });
 
   const cacheKey = `${q}|${minPrice}|${maxPrice}|${condition}|${order}`;
@@ -51,8 +51,38 @@ app.get('/search', async (req, res) => {
       'aceptable': 'fair'
     };
 
+    // IDs de categoría de Wallapop
+    const categoryMap = {
+      'consolas':        '18000',
+      'mandos':          '18000',
+      'juegos':          '18000',
+      'portatiles':      '18000',
+      'moviles':         '16000',
+      'tablets':         '15000',
+      'ordenadores':     '14000',
+      'audio':           '12000',
+      'camaras':         '11000',
+      'componentes':     '14000',
+      'electrodomesticos': '23000',
+      'television':      '13000',
+    };
+
+    // Palabras clave adicionales por categoría para afinar la búsqueda
+    const categoryKeywords = {
+      'consolas':   'consola',
+      'mandos':     'mando',
+      'juegos':     'juego',
+      'portatiles': 'portatil',
+    };
+
+    // Si hay categoría con palabras clave específicas, añadirlas a la query
+    const extraKeyword = categoryKeywords[category] || '';
+    const finalQuery = extraKeyword && !q.toLowerCase().includes(extraKeyword)
+      ? q + ' ' + extraKeyword
+      : q;
+
     const params = new URLSearchParams({
-      keywords: q,
+      keywords: finalQuery,
       order_by: order,
       country_code: 'ES',
       language: 'es_ES'
@@ -61,6 +91,9 @@ app.get('/search', async (req, res) => {
     if (maxPrice) params.append('max_sale_price', maxPrice);
     if (condition && conditionMap[condition]) {
       params.append('condition', conditionMap[condition]);
+    }
+    if (category && categoryMap[category]) {
+      params.append('category_ids', categoryMap[category]);
     }
 
     const url = `https://es.wallapop.com/app/search?${params}`;
