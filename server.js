@@ -43,10 +43,19 @@ app.get('/search', async (req, res) => {
     const page = await context.newPage();
     await page.route('**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf,otf}', r => r.abort());
 
+    // Mapeo de valores de estado al formato real de Wallapop
+    const conditionMap = {
+      'nuevo': 'new',
+      'como_nuevo': 'as_good_as_new',
+      'buen_estado': 'good',
+      'aceptable': 'fair'
+    };
+
     const params = new URLSearchParams({ keywords: q, order_by: order });
     if (minPrice) params.append('min_sale_price', minPrice);
     if (maxPrice) params.append('max_sale_price', maxPrice);
-    if (condition) params.append('condition', condition);
+    if (condition && conditionMap[condition]) params.append('filters_source', 'quick_filters');
+    if (condition && conditionMap[condition]) params.append('condition', conditionMap[condition]);
 
     const url = `https://es.wallapop.com/app/search?${params}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
