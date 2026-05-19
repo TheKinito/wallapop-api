@@ -1,5 +1,6 @@
 const express = require('express');
 const { chromium } = require('playwright');
+const https = require('https');
 
 const app = express();
 app.use(express.json());
@@ -7,6 +8,8 @@ app.use(express.json());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
 
@@ -94,7 +97,7 @@ app.get('/search', async (req, res) => {
     res.json(result);
 
   } catch (err) {
-    console.error('Error:', err.message);
+    console.error('Error search:', err.message);
     res.status(500).json({ error: err.message, query: q });
   } finally {
     if (browser) await browser.close().catch(() => {});
@@ -136,43 +139,55 @@ app.get('/item/:id', async (req, res) => {
   }
 });
 
-// ── IA DE REPARACIÓN (proxy hacia Claude) ──
+// ── IA DE REPARACIÓN usando https nativo (sin fetch) ──
 app.post('/ai', async (req, res) => {
   const { messages, system } = req.body;
   if (!messages || !messages.length) return res.status(400).json({ error: 'messages requerido' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada en Railway' });
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY no configurada' });
 
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: system || 'Eres un experto en reparación de electrónica. Responde en español.',
-        messages
-      })
-    });
+  const body = JSON.stringify({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1024,
+    system: system || 'Eres un experto en reparación de electrónica. Responde en español.',
+    messages
+  });
 
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(response.status).json({ error: err });
+  const options = {
+    hostname: 'api.anthropic.com',
+    path: '/v1/messages',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
     }
+  };
 
-    const data = await response.json();
-    const text = data.content?.map(b => b.text || '').join('\n') || '';
-    res.json({ reply: text });
+  const request = https.request(options, (response) => {
+    let data = '';
+    response.on('data', chunk => data += chunk);
+    response.on('end', () => {
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.error) return res.status(400).json({ error: parsed.error.message || 'Error de Anthropic' });
+        const reply = parsed.content?.map(b => b.text || '').join('\n') || '';
+        res.json({ reply });
+      } catch (e) {
+        res.status(500).json({ error: 'Error parseando respuesta: ' + data.slice(0, 200) });
+      }
+    });
+  });
 
-  } catch (err) {
-    console.error('AI error:', err.message);
+  request.on('error', (err) => {
+    console.error('HTTPS error:', err.message);
     res.status(500).json({ error: err.message });
-  }
+  });
+
+  request.write(body);
+  request.end();
 });
 
 // Health check
